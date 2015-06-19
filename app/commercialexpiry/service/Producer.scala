@@ -11,6 +11,7 @@ import com.gu.contentapi.client.model.SearchResponse
 import commercialexpiry.Config
 import commercialexpiry.data.{CapiClient, LineItem, Store}
 import org.joda.time.DateTime
+import play.api.Logger
 
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.control.NonFatal
@@ -47,7 +48,7 @@ object Producer {
       val expired = tags filter (_.lineItems.exists(p))
       val (ambiguous, unambiguous) = expired partition (_.matchingCapiTagIds.size > 1)
       if (ambiguous.nonEmpty)
-        println("++++++++++++++++++++++++++++++++ ambiguous: " + ambiguous.size)
+        Logger.info("++++++++++++++++++++++++++++++++ ambiguous: " + ambiguous.size)
       unambiguous flatMap (_.matchingCapiTagIds)
     }
   }
@@ -80,7 +81,7 @@ object Producer {
       val nextPage = fetchPage(pageIndex)
 
       nextPage onFailure {
-        case NonFatal(e) => println(s"Capi lookup failed: ${e.getMessage}")
+        case NonFatal(e) => Logger.error("Capi lookup failed", e)
       }
 
       nextPage flatMap { response =>
@@ -115,15 +116,14 @@ object Producer {
 
           val duplicates = contentIds.groupBy(identity).values.filter(_.size > 1)
           if (duplicates.nonEmpty) {
-            println("+++++++++++++++++++++++++++++++++++++++++++++++++ duplicates!")
-            println(duplicates.size)
+            Logger.info(s"+++++++++++++++++++++++++++++++++++++++ duplicates! : ${duplicates.size}")
           }
 
           for (id <- contentIds.sorted) yield {
             val update = CommercialStatusUpdate(id, expiryStatus)
             val result = putOntoStream(update)
             result onFailure {
-              case NonFatal(e) => println(s"Streaming $update failed: ${e.getMessage}")
+              case NonFatal(e) => Logger.error(s"Streaming $update failed", e)
             }
             result
           }
@@ -131,10 +131,10 @@ object Producer {
       }
 
       for (tagIds <- eventualTagIds) yield {
-        stream(tagIds, expiryStatus = true)
+        stream(tagIds, expiryStatus)
       }
       for (NonFatal(e) <- eventualTagIds.failed) yield {
-        println(e.getMessage)
+        Logger.error("Streaming updates failed", e)
       }
     }
 
