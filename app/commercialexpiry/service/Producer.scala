@@ -9,7 +9,7 @@ import com.amazonaws.services.kinesis.AmazonKinesisAsyncClient
 import com.amazonaws.services.kinesis.model.{PutRecordRequest, PutRecordResult}
 import com.gu.contentapi.client.model.SearchResponse
 import commercialexpiry.Config
-import commercialexpiry.data.{CapiClient, LineItem, Store}
+import commercialexpiry.data.{CapiClient, LineItem, PaidForTag, Store}
 import org.joda.time.DateTime
 import play.api.Logger
 
@@ -42,29 +42,27 @@ object Producer {
 
   private lazy val capiClient = new CapiClient()
 
-  private def fetchTagIds(p: LineItem => Boolean)
-                         (implicit ec: ExecutionContext): Future[Seq[String]] = {
-    Store.fetchPaidForTags(Config.dfpDataUrl) map { tags =>
+  private def getTagIds(tags: Seq[PaidForTag])(p: LineItem => Boolean)
+                       (implicit ec: ExecutionContext): Seq[String] = {
       val expired = tags filter (_.lineItems.exists(p))
       val (ambiguous, unambiguous) = expired partition (_.matchingCapiTagIds.size > 1)
       if (ambiguous.nonEmpty)
         Logger.info("++++++++++++++++++++++++++++++++ ambiguous: " + ambiguous.size)
       unambiguous flatMap (_.matchingCapiTagIds)
-    }
   }
 
-  def fetchTagIdsExpiredSince(time: DateTime)
-                             (implicit ec: ExecutionContext): Future[Seq[String]] = {
-    fetchTagIds { lineItem =>
+  def tagIdsExpiredRecently(tags: Seq[PaidForTag], time: DateTime)
+                           (implicit ec: ExecutionContext): Seq[String] = {
+    getTagIds(tags) { lineItem =>
       lineItem.endTime.exists(_.isAfter(time)) && lineItem.endTime.exists(_.isBeforeNow)
     }
   }
 
-  def fetchTagIdsResurrectedSince(time: DateTime)
-                                 (implicit ec: ExecutionContext): Future[Seq[String]] = {
+  def tagIdsResurrectedRecently(tags: Seq[PaidForTag], time: DateTime)
+                               (implicit ec: ExecutionContext): Seq[String] = {
     // lifecycle is created > expired > unexpired > expired > ...
     // so need to know what has been updated in last x mins and did not expire in last x mins
-    fetchTagIds { lineItem =>
+    getTagIds(tags) { lineItem =>
       lineItem.lastModified.isAfter(time) && lineItem.endTime.exists(_.isAfterNow)
     }
   }
@@ -108,7 +106,7 @@ object Producer {
 
   def run()(implicit ec: ExecutionContext): Unit = {
 
-    def stream(eventualTagIds: Future[Seq[String]], expiryStatus: Boolean): Unit = {
+    def stream(eventualTags: Future[Seq[PaidForTag]], threshold: DateTime): Unit = {
 
       def stream(tagIds: Seq[String],
                  expiryStatus: Boolean): Future[Seq[Future[PutRecordResult]]] = {
@@ -130,16 +128,17 @@ object Producer {
         }
       }
 
-      for (tagIds <- eventualTagIds) yield {
-        stream(tagIds, expiryStatus)
+      for (tags <- eventualTags) {
+        stream(tagIdsExpiredRecently(tags, threshold), expiryStatus = true)
+        stream(tagIdsResurrectedRecently(tags, threshold), expiryStatus = false)
       }
-      for (NonFatal(e) <- eventualTagIds.failed) yield {
+      for (NonFatal(e) <- eventualTags.failed) {
         Logger.error("Streaming updates failed", e)
       }
     }
 
     val threshold = DateTime.now().minusMonths(2)
-    stream(fetchTagIdsExpiredSince(threshold), expiryStatus = true)
-    stream(fetchTagIdsResurrectedSince(threshold), expiryStatus = false)
+    val adFeatureTags = Store.fetchPaidForTags(Config.dfpDataUrl)
+    stream(adFeatureTags, threshold)
   }
 }
