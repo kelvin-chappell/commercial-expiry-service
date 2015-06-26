@@ -2,143 +2,101 @@ package commercialexpiry.service
 
 import java.nio.ByteBuffer
 
-import com.amazonaws.handlers.AsyncHandler
-import com.amazonaws.regions.Region.getRegion
-import com.amazonaws.regions.Regions.EU_WEST_1
-import com.amazonaws.services.kinesis.AmazonKinesisAsyncClient
 import com.amazonaws.services.kinesis.model.{PutRecordRequest, PutRecordResult}
-import com.gu.contentapi.client.model.SearchResponse
 import commercialexpiry.Config
-import commercialexpiry.data.{CapiClient, LineItem, PaidForTag, Store}
+import commercialexpiry.data._
+import commercialexpiry.service.KinesisClient._
 import org.joda.time.DateTime
-import play.api.Logger
+import org.joda.time.DateTime.now
+import play.api.Play.current
+import play.api.cache.Cache
 
-import scala.concurrent.{ExecutionContext, Future, Promise}
-import scala.util.control.NonFatal
-import scala.util.{Failure, Success}
+import scala.concurrent.{ExecutionContext, Future}
 
-object Producer {
+object Producer extends Logger {
 
-  implicit class RichKinesisClient(client: AmazonKinesisAsyncClient) {
+  private val thresholdKey = "stream.threshold"
 
-    def asyncPutRecord(request: PutRecordRequest): Future[PutRecordResult] = {
-      val promise = Promise[PutRecordResult]()
+  def getUpdates(tags: Seq[PaidForTag],
+                 threshold: DateTime,
+                 lookUpContentIds: String => Future[Seq[String]])
+                (implicit ec: ExecutionContext): Future[Seq[CommercialStatusUpdate]] = {
 
-      val handler = new AsyncHandler[PutRecordRequest, PutRecordResult] {
-        override def onSuccess(request: PutRecordRequest, result: PutRecordResult): Unit =
-          promise.complete(Success(result))
-        override def onError(exception: Exception): Unit =
-          promise.complete(Failure(exception))
+    def getTagIds(p: LineItem => Boolean): Seq[String] = {
+      val (ambiguous, unambiguous) = tags filter {
+        _.lineItems.exists(p)
+      } partition {
+        _.matchingCapiTagIds.size > 1
       }
-
-      client.putRecordAsync(request, handler)
-
-      promise.future
-    }
-  }
-
-  private lazy val client: AmazonKinesisAsyncClient =
-    new AmazonKinesisAsyncClient().withRegion(getRegion(EU_WEST_1))
-
-  private lazy val capiClient = new CapiClient()
-
-  private def getTagIds(tags: Seq[PaidForTag])(p: LineItem => Boolean)
-                       (implicit ec: ExecutionContext): Seq[String] = {
-      val expired = tags filter (_.lineItems.exists(p))
-      val (ambiguous, unambiguous) = expired partition (_.matchingCapiTagIds.size > 1)
-      if (ambiguous.nonEmpty)
-        Logger.info("++++++++++++++++++++++++++++++++ ambiguous: " + ambiguous.size)
+      if (ambiguous.nonEmpty) {
+        logger.info("++++++++++++++++++++++++++++++++ ambiguous: " + ambiguous.size)
+      }
       unambiguous flatMap (_.matchingCapiTagIds)
-  }
-
-  def tagIdsExpiredRecently(tags: Seq[PaidForTag], time: DateTime)
-                           (implicit ec: ExecutionContext): Seq[String] = {
-    getTagIds(tags) { lineItem =>
-      lineItem.endTime.exists(_.isAfter(time)) && lineItem.endTime.exists(_.isBeforeNow)
     }
-  }
 
-  def tagIdsResurrectedRecently(tags: Seq[PaidForTag], time: DateTime)
-                               (implicit ec: ExecutionContext): Seq[String] = {
+    val tagIdsExpiredRecently = getTagIds { lineItem =>
+      lineItem.endTime.exists(_.isAfter(threshold)) && lineItem.endTime.exists(_.isBeforeNow)
+    }
+
     // lifecycle is created > expired > unexpired > expired > ...
     // so need to know what has been updated in last x mins and did not expire in last x mins
-    getTagIds(tags) { lineItem =>
-      lineItem.lastModified.isAfter(time) && lineItem.endTime.exists(_.isAfterNow)
-    }
-  }
-
-  def fetchContentIds(tagId: String)(implicit ec: ExecutionContext): Future[Seq[String]] = {
-
-    def fetch(pageIndex: Int, acc: Seq[String]): Future[Seq[String]] = {
-
-      def fetchPage(i: Int): Future[SearchResponse] = {
-        val query = capiClient.search.tag(tagId).pageSize(100).page(i)
-        capiClient.getResponse(query)
+    val tagIdsResurrectedRecently = getTagIds { lineItem =>
+      lineItem.lastModified.isAfter(threshold) && lineItem.endTime.exists(_.isAfterNow)
       }
 
-      val nextPage = fetchPage(pageIndex)
-
-      nextPage onFailure {
-        case NonFatal(e) => Logger.error("Capi lookup failed", e)
-      }
-
-      nextPage flatMap { response =>
-        val resultsSoFar = acc ++ response.results.map(_.id)
-        response.pages match {
-          case 0 => Future.successful(Nil)
-          case i if i == pageIndex => Future.successful(resultsSoFar)
-          case _ => fetch(pageIndex + 1, resultsSoFar)
+    def updates(tagIds: Seq[String], expiryStatus: Boolean): Future[Seq[CommercialStatusUpdate]] = {
+      val eventualContentIds = for (tagId <- tagIds) yield lookUpContentIds(tagId)
+      val foldedContentIds = Future.fold(eventualContentIds)(Seq.empty[String])(_ ++ _)
+      for (contentIds <- foldedContentIds) yield {
+        for (contentId <- contentIds.sorted) yield {
+          CommercialStatusUpdate(contentId, expired = expiryStatus)
         }
       }
     }
 
-    fetch(1, Nil)
-  }
-
-  def putOntoStream(update: CommercialStatusUpdate): Future[PutRecordResult] = {
-    val status = ByteBuffer.wrap(update.expired.toString.getBytes("UTF-8"))
-    val request = new PutRecordRequest()
-      .withStreamName(Config.streamName)
-      .withPartitionKey(update.contentId)
-      .withData(status)
-    client.asyncPutRecord(request)
+    for {
+      expiredUpdates <- updates(tagIdsExpiredRecently, expiryStatus = true)
+      resurrectedUpdates <- updates(tagIdsResurrectedRecently, expiryStatus = false)
+    } yield {
+      expiredUpdates ++ resurrectedUpdates
+    }
   }
 
   def run()(implicit ec: ExecutionContext): Unit = {
 
-    def stream(eventualTags: Future[Seq[PaidForTag]], threshold: DateTime): Unit = {
+    def putOntoStream(update: CommercialStatusUpdate): Future[PutRecordResult] = {
+      val status = ByteBuffer.wrap(update.expired.toString.getBytes("UTF-8"))
+      val request = new PutRecordRequest()
+        .withStreamName(Config.streamName)
+        .withPartitionKey(update.contentId)
+        .withData(status)
+      KinesisClient().asyncPutRecord(request)
+    }
 
-      def stream(tagIds: Seq[String],
-                 expiryStatus: Boolean): Future[Seq[Future[PutRecordResult]]] = {
-        Future.sequence(tagIds map fetchContentIds) map (_.flatten) map { contentIds =>
+    val startTime = now()
+    logger.info("Starting streaming...")
+    val adFeatureTags = Store.fetchPaidForTags(Config.dfpDataUrl)
+    val threshold = Cache.getOrElse[DateTime](thresholdKey)(DateTime.now().minusDays(1))
+    logger.info(s"Current threshold is $threshold")
 
-          val duplicates = contentIds.groupBy(identity).values.filter(_.size > 1)
-          if (duplicates.nonEmpty) {
-            Logger.info(s"+++++++++++++++++++++++++++++++++++++++ duplicates! : ${duplicates.size}")
-          }
-
-          for (id <- contentIds.sorted) yield {
-            val update = CommercialStatusUpdate(id, expiryStatus)
-            val result = putOntoStream(update)
-            result onFailure {
-              case NonFatal(e) => Logger.error(s"Streaming $update failed", e)
-            }
-            result
+    for {
+      tags <- adFeatureTags
+    } {
+      val eventualUpdates = getUpdates(tags, threshold, Capi.fetchContentIds)
+      for (e <- eventualUpdates.failed) logger.error(s"Getting updates failed", e)
+      for (updates <- eventualUpdates) {
+        logger.info(s"Got ${updates.size} updates")
+        val eventualPutResults = for (update <- updates) yield {
+          val eventualPutResult = putOntoStream(update)
+          for (e <- eventualPutResult.failed) logger.error(s"Streaming update $update failed", e)
+          eventualPutResult
+        }
+        for (putResults <- Future.sequence(eventualPutResults)) {
+          logger.info("Streaming successful")
+          logger.info(s"Updating threshold to $startTime")
+          Cache.set(thresholdKey, startTime)
           }
         }
       }
-
-      for (tags <- eventualTags) {
-        stream(tagIdsExpiredRecently(tags, threshold), expiryStatus = true)
-        stream(tagIdsResurrectedRecently(tags, threshold), expiryStatus = false)
-      }
-      for (NonFatal(e) <- eventualTags.failed) {
-        Logger.error("Streaming updates failed", e)
-      }
-    }
-
-    val threshold = DateTime.now().minusMonths(2)
-    val adFeatureTags = Store.fetchPaidForTags(Config.dfpDataUrl)
-    stream(adFeatureTags, threshold)
   }
 }
