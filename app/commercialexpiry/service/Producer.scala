@@ -83,9 +83,7 @@ object Producer extends Logger {
       logger.error(s"Failed to fetch targeted tags: $e")
     }
 
-    for {
-      tags <- adFeatureTags
-    } {
+    for (tags <- adFeatureTags) {
       val eventualUpdates = getUpdates(tags, threshold, Capi.fetchContentIds)
       for (e <- eventualUpdates.failed) logger.error(s"Getting updates failed", e)
       for (updates <- eventualUpdates) {
