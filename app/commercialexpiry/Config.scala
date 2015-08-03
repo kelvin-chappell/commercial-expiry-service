@@ -14,7 +14,7 @@ object Config {
   val capiUrl = getRequiredStringProperty("capi.url")
   val capiKey = getRequiredStringProperty("capi.key")
 
-  val dfpDataUrl = getRequiredStringProperty("dfp.data.url")
+  val dfpDataUrl = s"${getRequiredStringProperty("dfp.data.url.prefix")}/all-ad-features-v3.json"
 
   val streamName = getRequiredStringProperty("stream.name")
 }
