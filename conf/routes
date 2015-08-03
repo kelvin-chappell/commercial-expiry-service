@@ -2,7 +2,9 @@
 # This file defines all application routes (Higher priority routes first)
 # ~~~~
 
-GET     /                           controllers.Application.consume()
-GET     /produce                    controllers.Application.produce()
+GET     /                           controllers.Application.showIndex()
 GET     /start                      controllers.Application.start()
 GET     /stop                       controllers.Application.stop()
+
+GET     /consume                    controllers.Application.consume()
+GET     /produce                    controllers.Application.produce()

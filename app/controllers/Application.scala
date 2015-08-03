@@ -12,6 +12,10 @@ import scala.concurrent.duration._
 
 class Application @Inject()(system: ActorSystem, cache: CacheApi) extends Controller with Logger {
 
+  def showIndex() = Action {
+    Ok(views.html.index())
+  }
+
   def produce() = Action {
     Producer.run(cache)
     Ok("finished")
