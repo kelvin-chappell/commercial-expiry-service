@@ -11,6 +11,7 @@ import org.joda.time.DateTime.now
 import play.api.cache.CacheApi
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.control.NonFatal
 
 object Producer extends Logger {
 
@@ -77,6 +78,10 @@ object Producer extends Logger {
     val adFeatureTags = Store.fetchPaidForTags(Config.dfpDataUrl)
     val threshold = cache.getOrElse[DateTime](thresholdKey)(DateTime.now().minusDays(1))
     logger.info(s"Current threshold is $threshold")
+
+    for (NonFatal(e) <- adFeatureTags.failed) {
+      logger.error(s"Failed to fetch targeted tags: $e")
+    }
 
     for {
       tags <- adFeatureTags
