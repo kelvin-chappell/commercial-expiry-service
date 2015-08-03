@@ -3,8 +3,10 @@
 # ~~~~
 
 GET     /                           controllers.Application.showIndex()
-GET     /start                      controllers.Application.start()
+GET     /_healthcheck               controllers.Application.healthCheck()
+
 GET     /stop                       controllers.Application.stop()
+GET     /restart                    controllers.Application.restart()
 
 GET     /consume                    controllers.Application.consume()
 GET     /produce                    controllers.Application.produce()

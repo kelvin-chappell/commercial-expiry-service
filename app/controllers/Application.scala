@@ -4,6 +4,7 @@ import javax.inject.Inject
 
 import akka.actor.{ActorSystem, Cancellable}
 import commercialexpiry.service.{Logger, LoggingConsumer, Producer}
+import org.joda.time.DateTime
 import play.api.cache.CacheApi
 import play.api.mvc._
 
@@ -12,8 +13,35 @@ import scala.concurrent.duration._
 
 class Application @Inject()(system: ActorSystem, cache: CacheApi) extends Controller with Logger {
 
+  private val scheduleKey = "streamingSchedule"
+
+  private def start(): Option[Cancellable] = {
+    cache.get[Cancellable](scheduleKey) match {
+      case Some(_) => None
+      case None =>
+        val schedule = system.scheduler.schedule(initialDelay = 1.seconds, interval = 30.seconds) {
+          Producer.run(cache)
+        }
+        cache.set(scheduleKey, schedule)
+        Some(schedule)
+    }
+  }
+
+  start()
+
   def showIndex() = Action {
     Ok(views.html.index())
+  }
+
+  def healthCheck() = Action {
+    val healthy = for {
+      schedule <- cache.get[Cancellable](scheduleKey)
+      if !schedule.isCancelled
+      threshold <- cache.get[DateTime](Producer.thresholdKey)
+    } yield {
+        Ok(s"Current threshold: $threshold")
+      }
+    healthy getOrElse InternalServerError
   }
 
   def produce() = Action {
@@ -26,24 +54,6 @@ class Application @Inject()(system: ActorSystem, cache: CacheApi) extends Contro
     Ok("finished")
   }
 
-  private val scheduleKey = "streamingSchedule"
-
-  // this isn't threadsafe!
-  def start() = Action {
-    val msg = cache.get[Cancellable](scheduleKey) match {
-      case Some(s) =>
-        "Streaming process already started"
-      case None =>
-        cache.set(scheduleKey,
-          system.scheduler.schedule(initialDelay = 1.seconds, interval = 30.seconds) {
-            Producer.run(cache)
-          })
-        "Started streaming process"
-    }
-    logger.info(s"Start request: $msg")
-    Ok(msg)
-  }
-
   def stop() = Action {
     val msg = cache.get[Cancellable](scheduleKey) match {
       case Some(schedule) =>
@@ -54,6 +64,16 @@ class Application @Inject()(system: ActorSystem, cache: CacheApi) extends Contro
         "No streaming process to stop"
     }
     logger.info(s"Stop request: $msg")
+    Ok(msg)
+  }
+
+  // this isn't threadsafe! Could end up with an unreachable scheduled process.
+  def restart() = Action {
+    val msg = start() match {
+      case None => "Streaming process already started"
+      case Some(s) => "Started streaming process"
+    }
+    logger.info(s"Start request: $msg")
     Ok(msg)
   }
 }

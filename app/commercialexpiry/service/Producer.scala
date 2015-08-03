@@ -15,7 +15,7 @@ import scala.util.control.NonFatal
 
 object Producer extends Logger {
 
-  private val thresholdKey = "stream.threshold"
+  val thresholdKey = "stream.threshold"
 
   def getUpdates(tags: Seq[PaidForTag],
                  threshold: DateTime,
