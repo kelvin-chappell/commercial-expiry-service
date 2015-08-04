@@ -2,4 +2,4 @@
 
 This Play app produces a Kinesis stream of content items with a commercial expiry status attached to each item.
 
-See [Config](../blob/master/app/commercialexpiry/Config.scala) for the required configuration settings.
+See [Config](../master/app/commercialexpiry/Config.scala) for the required configuration settings.
