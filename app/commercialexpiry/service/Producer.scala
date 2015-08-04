@@ -35,8 +35,12 @@ object Producer extends Logger {
       lineItem.endTime.exists(_.isAfter(threshold)) && lineItem.endTime.exists(_.isBeforeNow)
     }
 
-    // lifecycle is created > expired > unexpired > expired > ...
-    // so need to know what has been updated in last x mins and did not expire in last x mins
+    /*
+     * Lifecycle is created > expired > unexpired > expired > ...
+     * So need to know what has been updated in last x mins and did not expire in last x mins.
+     * This is going to give a lot of false positives but setting items to unexpire
+     * more often than strictly necessary shouldn't cause any problems.
+     */
     val tagIdsResurrectedRecently = getTagIds { lineItem =>
       lineItem.lastModified.isAfter(threshold) && lineItem.endTime.exists(_.isAfterNow)
       }
