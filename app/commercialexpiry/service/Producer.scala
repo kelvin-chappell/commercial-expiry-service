@@ -8,14 +8,11 @@ import commercialexpiry.data._
 import commercialexpiry.service.KinesisClient._
 import org.joda.time.DateTime
 import org.joda.time.DateTime.now
-import play.api.cache.CacheApi
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.control.NonFatal
 
 object Producer extends Logger {
-
-  val thresholdKey = "stream.threshold"
 
   def getUpdates(tags: Seq[PaidForTag],
                  threshold: DateTime,
@@ -71,14 +68,12 @@ object Producer extends Logger {
     KinesisClient().asyncPutRecord(request)
   }
 
-  def run(cache: CacheApi)(implicit ec: ExecutionContext): Unit = {
+  def run(cache: Cache)(implicit ec: ExecutionContext): Unit = {
 
     val startTime = now()
     logger.info("Starting streaming...")
     val adFeatureTags = Store.fetchPaidForTags(Config.dfpDataUrl)
-    val threshold = cache.getOrElse(thresholdKey)(
-      DateTime.now().minusHours(Config.dfpDataInitialThreshold)
-    )
+    val threshold = cache.threshold
     logger.info(s"Current threshold is $threshold")
 
     for (NonFatal(e) <- adFeatureTags.failed) {
@@ -98,7 +93,7 @@ object Producer extends Logger {
         for (putResults <- Future.sequence(eventualPutResults)) {
           logger.info("Streaming successful")
           logger.info(s"Updating threshold to $startTime")
-          cache.set(thresholdKey, startTime)
+          cache.setThreshold(startTime)
           }
         }
       }
