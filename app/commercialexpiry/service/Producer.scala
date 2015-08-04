@@ -62,16 +62,16 @@ object Producer extends Logger {
     }
   }
 
-  def run(cache: CacheApi)(implicit ec: ExecutionContext): Unit = {
+  def putOntoStream(update: CommercialStatusUpdate): Future[PutRecordResult] = {
+    val status = ByteBuffer.wrap(update.expired.toString.getBytes("UTF-8"))
+    val request = new PutRecordRequest()
+      .withStreamName(Config.streamName)
+      .withPartitionKey(update.contentId)
+      .withData(status)
+    KinesisClient().asyncPutRecord(request)
+  }
 
-    def putOntoStream(update: CommercialStatusUpdate): Future[PutRecordResult] = {
-      val status = ByteBuffer.wrap(update.expired.toString.getBytes("UTF-8"))
-      val request = new PutRecordRequest()
-        .withStreamName(Config.streamName)
-        .withPartitionKey(update.contentId)
-        .withData(status)
-      KinesisClient().asyncPutRecord(request)
-    }
+  def run(cache: CacheApi)(implicit ec: ExecutionContext): Unit = {
 
     val startTime = now()
     logger.info("Starting streaming...")

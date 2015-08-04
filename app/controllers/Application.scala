@@ -3,7 +3,7 @@ package controllers
 import javax.inject.Inject
 
 import akka.actor.{ActorSystem, Cancellable}
-import commercialexpiry.service.{Logger, LoggingConsumer, Producer}
+import commercialexpiry.service.{CommercialStatusUpdate, Logger, LoggingConsumer, Producer}
 import org.joda.time.DateTime
 import play.api.cache.CacheApi
 import play.api.mvc._
@@ -44,14 +44,17 @@ class Application @Inject()(system: ActorSystem, cache: CacheApi) extends Contro
     healthy getOrElse InternalServerError
   }
 
-  def produce() = Action {
-    Producer.run(cache)
-    Ok("finished")
+  def adHocStream(contentId: String, expired: Boolean) = Action.async {
+    val update = CommercialStatusUpdate(contentId, expired)
+    val eventualResult = Producer.putOntoStream(update)
+    for (result <- eventualResult) yield {
+      Ok(s"Streamed update $update: ${result.getSequenceNumber}")
+    }
   }
 
   def consume() = Action {
     LoggingConsumer.run()
-    Ok("finished")
+    Ok("Finished")
   }
 
   def stop() = Action {
