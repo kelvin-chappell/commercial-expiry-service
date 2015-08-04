@@ -15,6 +15,9 @@ object Config {
   val capiKey = getRequiredStringProperty("capi.key")
 
   val dfpDataUrl = s"${getRequiredStringProperty("dfp.data.url.prefix")}/all-ad-features-v3.json"
+  val dfpDataInitialThreshold = configuration.getIntegerProperty("dfp.data.threshold") getOrElse 24
 
   val streamName = getRequiredStringProperty("stream.name")
+
+  val pollingInterval = configuration.getIntegerProperty("polling.interval") getOrElse 300
 }

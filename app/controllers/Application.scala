@@ -3,6 +3,7 @@ package controllers
 import javax.inject.Inject
 
 import akka.actor.{ActorSystem, Cancellable}
+import commercialexpiry.Config
 import commercialexpiry.service.{CommercialStatusUpdate, Logger, LoggingConsumer, Producer}
 import org.joda.time.DateTime
 import play.api.cache.CacheApi
@@ -19,7 +20,9 @@ class Application @Inject()(system: ActorSystem, cache: CacheApi) extends Contro
     cache.get[Cancellable](scheduleKey) match {
       case Some(_) => None
       case None =>
-        val schedule = system.scheduler.schedule(initialDelay = 1.seconds, interval = 30.seconds) {
+        val schedule = system.scheduler.schedule(
+          initialDelay = 1.seconds,
+          interval = Config.pollingInterval.seconds) {
           Producer.run(cache)
         }
         cache.set(scheduleKey, schedule)

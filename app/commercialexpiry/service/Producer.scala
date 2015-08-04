@@ -76,7 +76,9 @@ object Producer extends Logger {
     val startTime = now()
     logger.info("Starting streaming...")
     val adFeatureTags = Store.fetchPaidForTags(Config.dfpDataUrl)
-    val threshold = cache.getOrElse[DateTime](thresholdKey)(DateTime.now().minusDays(1))
+    val threshold = cache.getOrElse(thresholdKey)(
+      DateTime.now().minusHours(Config.dfpDataInitialThreshold)
+    )
     logger.info(s"Current threshold is $threshold")
 
     for (NonFatal(e) <- adFeatureTags.failed) {
