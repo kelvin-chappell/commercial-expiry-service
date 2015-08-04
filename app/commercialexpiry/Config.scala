@@ -14,14 +14,19 @@ object Config extends AwsInstanceTags {
   val capiKey = getRequiredStringProperty("capi.key")
 
   val dfpDataUrl = s"${getRequiredStringProperty("dfp.data.url.prefix")}/all-ad-features-v3.json"
+  val dfpDataInitialThreshold = getIntegerProperty("dfp.data.threshold") getOrElse 24
+  val pollingInterval = getIntegerProperty("polling.interval") getOrElse 300
 
   val streamName = getRequiredStringProperty("stream.name")
-
 
   def getRequiredStringProperty(key: String): String = {
     configuration.get(key) getOrElse {
       throw new IllegalArgumentException(s"Property '$key' not configured")
     }
+  }
+
+  def getIntegerProperty(key: String): Option[Int] = {
+    configuration.get(key).map(_.toInt)
   }
 
   private def loadConfiguration = {

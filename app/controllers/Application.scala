@@ -3,26 +3,30 @@ package controllers
 import javax.inject.Inject
 
 import akka.actor.{ActorSystem, Cancellable}
-import commercialexpiry.service.{Logger, LoggingConsumer, Producer}
-import org.joda.time.DateTime
+import commercialexpiry.Config
+import commercialexpiry.data.Cache
+import commercialexpiry.service.{CommercialStatusUpdate, Logger, LoggingConsumer, Producer}
 import play.api.cache.CacheApi
 import play.api.mvc._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-class Application @Inject()(system: ActorSystem, cache: CacheApi) extends Controller with Logger {
+class Application @Inject()(system: ActorSystem,
+                            cacheApi: CacheApi) extends Controller with Logger {
 
-  private val scheduleKey = "streamingSchedule"
+  private val cache = new Cache(cacheApi)
 
   private def start(): Option[Cancellable] = {
-    cache.get[Cancellable](scheduleKey) match {
+    cache.schedule match {
       case Some(_) => None
       case None =>
-        val schedule = system.scheduler.schedule(initialDelay = 1.seconds, interval = 30.seconds) {
+        val schedule = system.scheduler.schedule(
+          initialDelay = 1.seconds,
+          interval = Config.pollingInterval.seconds) {
           Producer.run(cache)
         }
-        cache.set(scheduleKey, schedule)
+        cache.setSchedule(schedule)
         Some(schedule)
     }
   }
@@ -35,30 +39,30 @@ class Application @Inject()(system: ActorSystem, cache: CacheApi) extends Contro
 
   def healthCheck() = Action {
     val healthy = for {
-      schedule <- cache.get[Cancellable](scheduleKey)
+      schedule <- cache.schedule
       if !schedule.isCancelled
-      threshold <- cache.get[DateTime](Producer.thresholdKey)
-    } yield {
-        Ok(s"Current threshold: $threshold")
-      }
+    } yield Ok(s"Current threshold: ${cache.threshold}")
     healthy getOrElse InternalServerError
   }
 
-  def produce() = Action {
-    Producer.run(cache)
-    Ok("finished")
+  def adHocStream(contentId: String, expired: Boolean) = Action.async {
+    val update = CommercialStatusUpdate(contentId, expired)
+    val eventualResult = Producer.putOntoStream(update)
+    for (result <- eventualResult) yield {
+      Ok(s"Streamed update $update: ${result.getSequenceNumber}")
+    }
   }
 
   def consume() = Action {
     LoggingConsumer.run()
-    Ok("finished")
+    Ok("Finished")
   }
 
   def stop() = Action {
-    val msg = cache.get[Cancellable](scheduleKey) match {
+    val msg = cache.schedule match {
       case Some(schedule) =>
         schedule.cancel()
-        cache.remove(scheduleKey)
+        cache.removeSchedule()
         "Streaming process stopped"
       case None =>
         "No streaming process to stop"

@@ -13,7 +13,7 @@ libraryDependencies ++= Seq(
   jdbc,
   cache,
   ws,
-  "com.amazonaws" % "aws-java-sdk" % "1.10.5.1",
+  "com.amazonaws" % "aws-java-sdk" % "1.10.8",
   "com.gu" %% "content-api-client" % "6.7"
 )
 
