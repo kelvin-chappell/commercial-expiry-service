@@ -1,0 +1,24 @@
+{
+  "defaultStacks": ["flexible"],
+  "packages":{
+    "commercial-expiry-service":{
+      "type":"autoscaling",
+      "data":{
+        "port":9000,
+        "bucket":"composer-dist",
+        "publicReadAcl": false
+      }
+    }
+  },
+  "recipes":{
+    "default":{
+      "depends" : ["artifactUploadOnly", "deployOnly"]
+    },
+    "deployOnly":{
+      "actionsPerHost": ["commercial-expiry-service.deploy"]
+    },
+    "artifactUploadOnly":{
+      "actionsBeforeApp": ["commercial-expiry-service.uploadArtifacts"]
+    }
+  }
+}
