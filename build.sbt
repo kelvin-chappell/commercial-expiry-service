@@ -13,9 +13,9 @@ libraryDependencies ++= Seq(
   jdbc,
   cache,
   ws,
-  "com.amazonaws" % "aws-java-sdk" % "1.10.11",
+  "com.amazonaws" % "aws-java-sdk" % "1.10.18",
   "com.gu" %% "content-api-client" % "6.7",
-  "com.google.api-ads" % "dfp-axis" % "2.2.0"
+  "com.google.api-ads" % "dfp-axis" % "2.4.0"
 )
 
 packageName in Universal := normalizedName.value
