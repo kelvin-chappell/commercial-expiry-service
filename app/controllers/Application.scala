@@ -16,18 +16,11 @@ class Application @Inject()(system: ActorSystem,
   private val cache = new Cache(cacheApi)
   private val scheduler = new Scheduler(system, cache)
 
-  scheduler.start()
-
-  def showIndex() = Action {
-    Ok(views.html.index())
-  }
+  val schedule = scheduler.start()
 
   def healthCheck() = Action {
-    val healthy = for {
-      schedule <- cache.schedule
-      if !schedule.isCancelled
-    } yield Ok(s"Current threshold: ${cache.threshold}")
-    healthy getOrElse InternalServerError
+    if (schedule.isCancelled) InternalServerError
+    else Ok(s"Current threshold: ${cache.threshold}")
   }
 
   def adHocStream(contentId: String, expired: Boolean) = Action.async {
@@ -36,27 +29,5 @@ class Application @Inject()(system: ActorSystem,
     for (result <- eventualResult) yield {
       Ok(s"Streamed update $update: ${result.getSequenceNumber}")
     }
-  }
-
-  def consume() = Action {
-    LoggingConsumer.run()
-    Ok("Finished")
-  }
-
-  def stop() = Action {
-    val stopped = scheduler.stop()
-    val msg = if (stopped) "Streaming process stopped" else "No streaming process to stop"
-    logger.info(s"Stop request: $msg")
-    Ok(msg)
-  }
-
-  // this isn't threadsafe! Could end up with an unreachable scheduled process.
-  def restart() = Action {
-    val msg = scheduler.start() match {
-      case None => "Streaming process already started"
-      case Some(s) => "Started streaming process"
-    }
-    logger.info(s"Start request: $msg")
-    Ok(msg)
   }
 }
