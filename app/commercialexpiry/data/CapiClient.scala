@@ -3,10 +3,11 @@ package commercialexpiry.data
 import com.gu.contentapi.client.ContentApiClientLogic
 import com.gu.contentapi.client.model.SearchResponse
 import commercialexpiry.Config
+import commercialexpiry.service.Logger
 import dispatch.Http
-import play.api.Logger
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.util.control.NonFatal
 
 class CapiClient extends ContentApiClientLogic {
@@ -20,11 +21,36 @@ class CapiClient extends ContentApiClientLogic {
   override val apiKey: String = Config.capiKey
 }
 
-object Capi {
+object Capi extends Logger {
 
   private lazy val capiClient = new CapiClient()
 
-  def fetchContentIds(tagId: String)(implicit ec: ExecutionContext): Future[Seq[String]] = {
+  private def fetchTagId(tagType: String, tagSuffix: String): Future[Option[String]] = {
+    val query = capiClient.tags.q(tagSuffix).tagType(tagType)
+    val eventualResponse = capiClient.getResponse(query)
+
+    eventualResponse onFailure {
+      case NonFatal(e) => logger.error("Capi tag lookup failed", e)
+    }
+
+    for (response <- eventualResponse) yield {
+      val tagIds = for {
+        tag <- response.results
+        if tag.id endsWith s"/$tagSuffix"
+      } yield tag.id
+      if (tagIds.size > 1) {
+        val results = tagIds.mkString(", ")
+        logger.warn(s"Ambiguous $tagType tags for suffix $tagSuffix: $results")
+        None
+      } else tagIds.headOption
+    }
+  }
+
+  def fetchSeriesId(suffix: String): Future[Option[String]] = fetchTagId("series", suffix)
+
+  def fetchKeywordId(suffix: String): Future[Option[String]] = fetchTagId("keyword", suffix)
+
+  def fetchContentIds(tagId: String): Future[Seq[String]] = {
 
     def fetch(pageIndex: Int, acc: Seq[String]): Future[Seq[String]] = {
 
@@ -36,7 +62,7 @@ object Capi {
       val nextPage = fetchPage(pageIndex)
 
       nextPage onFailure {
-        case NonFatal(e) => Logger.error("Capi lookup failed", e)
+        case NonFatal(e) => logger.error("Capi content lookup failed", e)
       }
 
       nextPage flatMap { response =>

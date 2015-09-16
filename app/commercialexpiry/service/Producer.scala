@@ -6,62 +6,13 @@ import com.amazonaws.services.kinesis.model.{PutRecordRequest, PutRecordResult}
 import commercialexpiry.Config
 import commercialexpiry.data._
 import commercialexpiry.service.KinesisClient._
-import org.joda.time.DateTime
 import org.joda.time.DateTime.now
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.util.control.NonFatal
 
 object Producer extends Logger {
-
-  def getUpdates(tags: Seq[PaidForTag],
-                 threshold: DateTime,
-                 lookUpContentIds: String => Future[Seq[String]])
-                (implicit ec: ExecutionContext): Future[Seq[CommercialStatusUpdate]] = {
-
-    def getTagIds(p: LineItem => Boolean): Seq[String] = {
-      val (ambiguous, unambiguous) = tags filter {
-        _.lineItems.exists(p)
-      } partition {
-        _.matchingCapiTagIds.size > 1
-      }
-      if (ambiguous.nonEmpty) {
-        logger.info("++++++++++++++++++++++++++++++++ ambiguous: " + ambiguous.size)
-      }
-      unambiguous flatMap (_.matchingCapiTagIds)
-    }
-
-    val tagIdsExpiredRecently = getTagIds { lineItem =>
-      lineItem.endTime.exists(_.isAfter(threshold)) && lineItem.endTime.exists(_.isBeforeNow)
-    }
-
-    /*
-     * Lifecycle is created > expired > unexpired > expired > ...
-     * So need to know what has been updated in last x mins and did not expire in last x mins.
-     * This is going to give a lot of false positives but setting items to unexpire
-     * more often than strictly necessary shouldn't cause any problems.
-     */
-    val tagIdsResurrectedRecently = getTagIds { lineItem =>
-      lineItem.lastModified.isAfter(threshold) && lineItem.endTime.exists(_.isAfterNow)
-      }
-
-    def updates(tagIds: Seq[String], expiryStatus: Boolean): Future[Seq[CommercialStatusUpdate]] = {
-      val eventualContentIds = for (tagId <- tagIds) yield lookUpContentIds(tagId)
-      val foldedContentIds = Future.fold(eventualContentIds)(Seq.empty[String])(_ ++ _)
-      for (contentIds <- foldedContentIds) yield {
-        for (contentId <- contentIds.sorted) yield {
-          CommercialStatusUpdate(contentId, expired = expiryStatus)
-        }
-      }
-    }
-
-    for {
-      expiredUpdates <- updates(tagIdsExpiredRecently, expiryStatus = true)
-      resurrectedUpdates <- updates(tagIdsResurrectedRecently, expiryStatus = false)
-    } yield {
-      expiredUpdates ++ resurrectedUpdates
-    }
-  }
 
   def putOntoStream(update: CommercialStatusUpdate): Future[PutRecordResult] = {
     val status = ByteBuffer.wrap(update.expired.toString.getBytes("UTF-8"))
@@ -72,34 +23,96 @@ object Producer extends Logger {
     KinesisClient().asyncPutRecord(request)
   }
 
-  def run(cache: Cache)(implicit ec: ExecutionContext): Unit = {
+  def run(cache: Cache): Unit = {
 
-    val startTime = now()
-    logger.info("Starting streaming...")
-    val adFeatureTags = Store.fetchPaidForTags(Config.dfpDataUrl)
+    logger.info("Starting streaming run...")
     val threshold = cache.threshold
     logger.info(s"Current threshold is $threshold")
 
-    for (NonFatal(e) <- adFeatureTags.failed) {
-      logger.error(s"Failed to fetch targeted tags: $e")
-    }
+    val startTime = now()
 
-    for (tags <- adFeatureTags) {
-      val eventualUpdates = getUpdates(tags, threshold, Capi.fetchContentIds)
-      for (e <- eventualUpdates.failed) logger.error(s"Getting updates failed", e)
-      for (updates <- eventualUpdates) {
-        logger.info(s"Got ${updates.size} updates")
-        val eventualPutResults = for (update <- updates) yield {
-          val eventualPutResult = putOntoStream(update)
-          for (e <- eventualPutResult.failed) logger.error(s"Streaming update $update failed", e)
-          eventualPutResult
+    def mkString[A](as: Seq[A]): String = as mkString ", "
+
+    def streamLineItems(lineItems: Seq[LineItem],
+                        fetchTagId: (String) => Future[Option[String]],
+                        expiryStatus: Boolean): Unit = {
+      for (lineItem <- lineItems) {
+        val tagSuffix = lineItem.tag.suffix
+        val eventualTagId = fetchTagId(tagSuffix)
+
+        for (NonFatal(e) <- eventualTagId.failed) {
+          logger.error(s"Fetching tag ID for $tagSuffix failed: ${e.getMessage}")
         }
-        for (putResults <- Future.sequence(eventualPutResults)) {
-          logger.info("Streaming successful")
-          logger.info(s"Updating threshold to $startTime")
-          cache.setThreshold(startTime)
+
+        for (maybeTagId <- eventualTagId) {
+          for (tagId <- maybeTagId) {
+            logger.info(s"$lineItem -> Tag $tagId")
+            val eventualContentIds = Capi.fetchContentIds(tagId)
+
+            for (NonFatal(e) <- eventualContentIds.failed) {
+              logger.error(s"Fetching content for tag $tagId failed: ${e.getMessage}")
+            }
+
+            for (contentIds <- eventualContentIds) {
+              logger.info(s"Tag $tagId -> Content ${mkString(contentIds)}")
+              for (contentId <- contentIds) {
+                val update = CommercialStatusUpdate(contentId, expired = expiryStatus)
+                logger.info(s"Streaming $update...")
+                val streamingResult: Future[PutRecordResult] = putOntoStream(update)
+
+                for (e <- streamingResult.failed) {
+                  logger.error(s"Streaming $update failed: ${e.getMessage}")
+                }
+
+                for (result <- streamingResult) {
+                  logger.info(s"Streamed $update with seq num ${result.getSequenceNumber}")
+                }
+              }
+            }
           }
         }
       }
+    }
+
+    for (session <- Dfp.createSession()) {
+
+      /*
+       * Lifecycle is created > expired > unexpired > expired > ...
+       * So need to know what has been updated in last x mins and did not expire in last x
+       * mins.
+       * This is going to give a lot of false positives but setting items to un-expire
+       * more often than strictly necessary shouldn't cause any problems.
+       */
+      val lineItemsModifiedRecently =
+        Dfp.fetchUnexpiredLineItemsModifiedRecently(threshold, session)
+      val unexpiredSeriesLineItems =
+        LineItemHelper.filterAdFeatureSeriesLineItems(lineItemsModifiedRecently)
+      val unexpiredKeywordLineItems =
+        LineItemHelper.filterAdFeatureKeywordLineItems(lineItemsModifiedRecently)
+      val unexpired = unexpiredSeriesLineItems ++ unexpiredKeywordLineItems
+      if (unexpired.nonEmpty) {
+        logger.info(
+          s"These line items have possibly been resurrected recently: ${mkString(unexpired)}"
+        )
+      }
+
+      streamLineItems(unexpiredSeriesLineItems, Capi.fetchSeriesId, expiryStatus = false)
+      streamLineItems(unexpiredKeywordLineItems, Capi.fetchKeywordId, expiryStatus = false)
+
+      val lineItemsExpiredRecently = Dfp.fetchLineItemsExpiredRecently(threshold, session)
+      val expiredSeriesLineItems =
+        LineItemHelper.filterAdFeatureSeriesLineItems(lineItemsExpiredRecently)
+      val expiredKeywordLineItems =
+        LineItemHelper.filterAdFeatureKeywordLineItems(lineItemsExpiredRecently)
+      val expired = expiredSeriesLineItems ++ expiredKeywordLineItems
+      if (expired.nonEmpty) {
+        logger.info(s"These line items have expired recently: ${mkString(expired)}")
+      }
+
+      streamLineItems(expiredSeriesLineItems, Capi.fetchSeriesId, expiryStatus = true)
+      streamLineItems(expiredKeywordLineItems, Capi.fetchKeywordId, expiryStatus = true)
+
+      cache.setThreshold(startTime)
+    }
   }
 }
