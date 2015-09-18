@@ -13,6 +13,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 class Application @Inject()(system: ActorSystem,
                             cacheApi: CacheApi) extends Controller with Logger {
 
+  LogstashBootstrapper.bootstrap()
+
   private val cache = new Cache(cacheApi)
   private val scheduler = new Scheduler(system, cache)
 

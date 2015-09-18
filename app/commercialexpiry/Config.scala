@@ -29,6 +29,12 @@ object Config extends AwsInstanceTags {
     configuration.get(key).map(_.toInt)
   }
 
+  object aws {
+    lazy val stack = readTag("Stack") getOrElse "flexible"
+    lazy val stage = readTag("Stage") getOrElse "DEV"
+    lazy val app = readTag("App") getOrElse "commercial-expiry-service"
+  }
+
   object dfp {
     lazy val clientId = getRequiredStringProperty("dfp.client.id")
     lazy val clientSecret = getRequiredStringProperty("dfp.client.secret")
@@ -41,13 +47,14 @@ object Config extends AwsInstanceTags {
     val adFeatureSlotTargetValueId = 83102154207L
   }
 
+  object logstash {
+    val host = "ingest.logs.gutools.co.uk"
+    val port = "6379"
+  }
+
   private def loadConfiguration = {
 
-    val stack = readTag("Stack") getOrElse "flexible"
-    val stage = readTag("Stage") getOrElse "DEV"
-    val app = readTag("App") getOrElse "commercial-expiry-service"
-
-    val bucketName = s"guconf-$stack"
+    val bucketName = s"guconf-${aws.stack}"
 
     def loadPropertiesFromS3(propertiesKey: String, props: Properties): Unit = {
       val s3Properties = AWS.S3Client.getObject(new GetObjectRequest(bucketName, propertiesKey))
@@ -61,8 +68,8 @@ object Config extends AwsInstanceTags {
 
     val props = new Properties()
 
-    loadPropertiesFromS3(s"$app/global.properties", props)
-    loadPropertiesFromS3(s"$app/$stage.properties", props)
+    loadPropertiesFromS3(s"${aws.app}/global.properties", props)
+    loadPropertiesFromS3(s"${aws.app}/${aws.stage}.properties", props)
 
     props.toMap
   }
