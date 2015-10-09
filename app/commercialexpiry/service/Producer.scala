@@ -76,41 +76,20 @@ object Producer extends Logger {
 
     for (session <- Dfp.createSession()) {
 
-      /*
-       * Lifecycle is created > expired > unexpired > expired > ...
-       * So need to know what has been updated in last x mins and did not expire in last x
-       * mins.
-       * This is going to give a lot of false positives but setting items to un-expire
-       * more often than strictly necessary shouldn't cause any problems.
-       */
-      val lineItemsModifiedRecently =
-        Dfp.fetchUnexpiredLineItemsModifiedRecently(threshold, session)
-      val unexpiredSeriesLineItems =
-        LineItemHelper.filterAdFeatureSeriesLineItems(lineItemsModifiedRecently)
-      val unexpiredKeywordLineItems =
-        LineItemHelper.filterAdFeatureKeywordLineItems(lineItemsModifiedRecently)
-      val unexpired = unexpiredSeriesLineItems ++ unexpiredKeywordLineItems
-      if (unexpired.nonEmpty) {
-        logger.info(
-          s"These line items have possibly been resurrected recently: ${mkString(unexpired)}"
-        )
-      }
-
-      streamLineItems(unexpiredSeriesLineItems, Capi.fetchSeriesId, expiryStatus = false)
-      streamLineItems(unexpiredKeywordLineItems, Capi.fetchKeywordId, expiryStatus = false)
-
       val lineItemsExpiredRecently = Dfp.fetchLineItemsExpiredRecently(threshold, session)
+
       val expiredSeriesLineItems =
         LineItemHelper.filterAdFeatureSeriesLineItems(lineItemsExpiredRecently)
+      streamLineItems(expiredSeriesLineItems, Capi.fetchSeriesId, expiryStatus = true)
+
       val expiredKeywordLineItems =
         LineItemHelper.filterAdFeatureKeywordLineItems(lineItemsExpiredRecently)
+      streamLineItems(expiredKeywordLineItems, Capi.fetchKeywordId, expiryStatus = true)
+
       val expired = expiredSeriesLineItems ++ expiredKeywordLineItems
       if (expired.nonEmpty) {
         logger.info(s"These line items have expired recently: ${mkString(expired)}")
       }
-
-      streamLineItems(expiredSeriesLineItems, Capi.fetchSeriesId, expiryStatus = true)
-      streamLineItems(expiredKeywordLineItems, Capi.fetchKeywordId, expiryStatus = true)
 
       cache.setThreshold(startTime)
     }
