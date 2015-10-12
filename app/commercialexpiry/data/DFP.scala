@@ -5,6 +5,7 @@ import com.google.api.ads.common.lib.auth.OfflineCredentials.Api
 import com.google.api.ads.dfp.axis.factory.DfpServices
 import com.google.api.ads.dfp.axis.utils.v201505.StatementBuilder
 import com.google.api.ads.dfp.axis.utils.v201505.StatementBuilder._
+import com.google.api.ads.dfp.axis.v201505.CustomCriteriaComparisonOperator.IS
 import com.google.api.ads.dfp.axis.v201505.{LineItem => DfpLineItem, _}
 import com.google.api.ads.dfp.lib.client.DfpSession
 import com.google.api.client.auth.oauth2.Credential
@@ -162,19 +163,34 @@ object LineItemHelper {
     tagTargets.headOption
   }
 
-  def filterAdFeatureSeriesLineItems(lineItems: Seq[DfpLineItem]): Seq[LineItem] = {
+  def filterAdFeatureSeriesLineItems(lineItems: Seq[DfpLineItem],
+                                     seriesTarget: Long => Option[String]): Seq[LineItem] = {
     for {
       lineItem <- lineItems
-      seriesTarget <- adFeatureTagTarget(lineItem, CustomTargeting.adFeatureSeriesTarget)
+      seriesTarget <- adFeatureTagTarget(
+        lineItem,
+        criteriaSet =>
+          CustomTargeting.adFeatureTagTarget(
+            criteriaSet,
+            targetKeyId = seriesTargetKeyId,
+            targetValue = seriesTarget)
+      )
     } yield {
       LineItem(lineItem.getId, Series(seriesTarget))
     }
   }
 
-  def filterAdFeatureKeywordLineItems(lineItems: Seq[DfpLineItem]): Seq[LineItem] = {
+  def filterAdFeatureKeywordLineItems(lineItems: Seq[DfpLineItem],
+                                      keywordTarget: Long => Option[String]): Seq[LineItem] = {
     for {
       lineItem <- lineItems
-      keywordTarget <- adFeatureTagTarget(lineItem, CustomTargeting.adFeatureKeywordTarget)
+      keywordTarget <- adFeatureTagTarget(lineItem,
+        criteriaSet =>
+          CustomTargeting.adFeatureTagTarget(
+            criteriaSet,
+            targetKeyId = keywordTargetKeyId,
+            targetValue = keywordTarget)
+      )
     } yield {
       LineItem(lineItem.getId, Keyword(keywordTarget))
     }
@@ -205,8 +221,9 @@ object CustomTargeting {
     criteria(criteriaSet) find p
   }
 
-  private def adFeatureTagTarget(criteriaSet: CustomCriteriaSet,
-                                 targetKeyId: Long): Option[String] = {
+  def adFeatureTagTarget(criteriaSet: CustomCriteriaSet,
+                         targetKeyId: Long,
+                         targetValue: Long => Option[String]): Option[String] = {
 
     val hasAdFeatureSlotTarget = {
       contains(criteriaSet) { criterion =>
@@ -217,22 +234,11 @@ object CustomTargeting {
 
     if (hasAdFeatureSlotTarget) {
       for {
-        criterion <- find(criteriaSet) {_.getKeyId == targetKeyId}
-        tagTarget <- criterion.getKeyId.toLong match {
-          case Config.dfp.seriesTargetKeyId =>
-            Dfp.seriesTarget(criterion.getValueIds.head)
-          case Config.dfp.keywordTargetKeyId =>
-            Dfp.keywordTarget(criterion.getValueIds.head)
+        criterion <- find(criteriaSet) { c =>
+          c.getOperator == IS && c.getKeyId == targetKeyId
         }
+        tagTarget <- targetValue(criterion.getValueIds(0))
       } yield tagTarget
     } else None
-  }
-
-  def adFeatureSeriesTarget(criteriaSet: CustomCriteriaSet): Option[String] = {
-    adFeatureTagTarget(criteriaSet, seriesTargetKeyId)
-  }
-
-  def adFeatureKeywordTarget(criteriaSet: CustomCriteriaSet): Option[String] = {
-    adFeatureTagTarget(criteriaSet, keywordTargetKeyId)
   }
 }

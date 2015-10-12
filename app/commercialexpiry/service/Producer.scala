@@ -79,11 +79,11 @@ object Producer extends Logger {
       val lineItemsExpiredRecently = Dfp.fetchLineItemsExpiredRecently(threshold, session)
 
       val expiredSeriesLineItems =
-        LineItemHelper.filterAdFeatureSeriesLineItems(lineItemsExpiredRecently)
+        LineItemHelper.filterAdFeatureSeriesLineItems(lineItemsExpiredRecently, Dfp.seriesTarget)
       streamLineItems(expiredSeriesLineItems, Capi.fetchSeriesId, expiryStatus = true)
 
       val expiredKeywordLineItems =
-        LineItemHelper.filterAdFeatureKeywordLineItems(lineItemsExpiredRecently)
+        LineItemHelper.filterAdFeatureKeywordLineItems(lineItemsExpiredRecently, Dfp.keywordTarget)
       streamLineItems(expiredKeywordLineItems, Capi.fetchKeywordId, expiryStatus = true)
 
       val expired = expiredSeriesLineItems ++ expiredKeywordLineItems
