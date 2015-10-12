@@ -3,10 +3,10 @@ package commercialexpiry.data
 import com.google.api.ads.common.lib.auth.OfflineCredentials
 import com.google.api.ads.common.lib.auth.OfflineCredentials.Api
 import com.google.api.ads.dfp.axis.factory.DfpServices
-import com.google.api.ads.dfp.axis.utils.v201505.StatementBuilder
-import com.google.api.ads.dfp.axis.utils.v201505.StatementBuilder._
-import com.google.api.ads.dfp.axis.v201505.CustomCriteriaComparisonOperator.IS
-import com.google.api.ads.dfp.axis.v201505.{LineItem => DfpLineItem, _}
+import com.google.api.ads.dfp.axis.utils.v201508.StatementBuilder
+import com.google.api.ads.dfp.axis.utils.v201508.StatementBuilder._
+import com.google.api.ads.dfp.axis.v201508.CustomCriteriaComparisonOperator.IS
+import com.google.api.ads.dfp.axis.v201508.{LineItem => DfpLineItem, _}
 import com.google.api.ads.dfp.lib.client.DfpSession
 import com.google.api.client.auth.oauth2.Credential
 import commercialexpiry.Config
@@ -197,7 +197,7 @@ object LineItemHelper {
   }
 }
 
-// see https://developers.google.com/doubleclick-publishers/docs/reference/v201505
+// see https://developers.google.com/doubleclick-publishers/docs/reference/v201508
 // /LineItemService.Targeting
 object CustomTargeting {
 

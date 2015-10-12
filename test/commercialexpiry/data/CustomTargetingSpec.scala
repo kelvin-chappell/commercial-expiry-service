@@ -1,8 +1,8 @@
 package commercialexpiry.data
 
-import com.google.api.ads.dfp.axis.v201505.CustomCriteriaComparisonOperator.{IS, IS_NOT}
-import com.google.api.ads.dfp.axis.v201505.CustomCriteriaSetLogicalOperator.AND
-import com.google.api.ads.dfp.axis.v201505.{CustomCriteria, CustomCriteriaSet}
+import com.google.api.ads.dfp.axis.v201508.CustomCriteriaComparisonOperator.{IS, IS_NOT}
+import com.google.api.ads.dfp.axis.v201508.CustomCriteriaSetLogicalOperator.AND
+import com.google.api.ads.dfp.axis.v201508.{CustomCriteria, CustomCriteriaSet}
 import commercialexpiry.Config.dfp.{adFeatureSlotTargetValueId, keywordTargetKeyId, seriesTargetKeyId, slotTargetKeyId}
 import org.specs2.mutable._
 
