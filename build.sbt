@@ -13,6 +13,7 @@ libraryDependencies ++= Seq(
   jdbc,
   cache,
   ws,
+  specs2,
   "com.amazonaws" % "aws-java-sdk" % "1.10.26",
   "com.gu" %% "content-api-client" % "6.7",
   "com.google.api-ads" % "dfp-axis" % "2.5.0",
