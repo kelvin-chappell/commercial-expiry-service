@@ -1,7 +1,7 @@
 package commercialexpiry.data
 
 import com.gu.contentapi.client.ContentApiClientLogic
-import com.gu.contentapi.client.model.SearchResponse
+import com.gu.contentapi.client.model.{SearchQuery, SearchResponse}
 import commercialexpiry.Config
 import commercialexpiry.service.Logger
 import dispatch.Http
@@ -50,12 +50,12 @@ object Capi extends Logger {
 
   def fetchKeywordId(suffix: String): Future[Option[String]] = fetchTagId("keyword", suffix)
 
-  def fetchContentIds(tagId: String): Future[Seq[String]] = {
+  private def fetchContentIds(q: SearchQuery): Future[Seq[String]] = {
 
     def fetch(pageIndex: Int, acc: Seq[String]): Future[Seq[String]] = {
 
       def fetchPage(i: Int): Future[SearchResponse] = {
-        val query = capiClient.search.tag(tagId).pageSize(100).page(i)
+        val query = q.pageSize(100).page(i)
         capiClient.getResponse(query)
       }
 
@@ -76,5 +76,13 @@ object Capi extends Logger {
     }
 
     fetch(1, Nil)
+  }
+
+  def fetchContentIdsByTag(tagId: String): Future[Seq[String]] = {
+    fetchContentIds(capiClient.search.tag(tagId))
+  }
+
+  def fetchContentIdsBySection(sectionId: String): Future[Seq[String]] = {
+    fetchContentIds(capiClient.search.section(sectionId))
   }
 }

@@ -47,7 +47,7 @@ object Producer extends Logger {
         for (maybeTagId <- eventualTagId) {
           for (tagId <- maybeTagId) {
             logger.info(s"$lineItem -> Tag $tagId")
-            val eventualContentIds = Capi.fetchContentIds(tagId)
+            val eventualContentIds = Capi.fetchContentIdsByTag(tagId)
 
             for (NonFatal(e) <- eventualContentIds.failed) {
               logger.error(s"Fetching content for tag $tagId failed: ${e.getMessage}")
