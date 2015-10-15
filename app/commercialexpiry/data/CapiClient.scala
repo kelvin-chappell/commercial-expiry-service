@@ -55,7 +55,7 @@ object Capi extends Logger {
     def fetch(pageIndex: Int, acc: Seq[String]): Future[Seq[String]] = {
 
       def fetchPage(i: Int): Future[SearchResponse] = {
-        val query = q.pageSize(100).page(i)
+        val query = q.showTags("tone").pageSize(100).page(i)
         capiClient.getResponse(query)
       }
 
@@ -66,7 +66,10 @@ object Capi extends Logger {
       }
 
       nextPage flatMap { response =>
-        val resultsSoFar = acc ++ response.results.map(_.id)
+        val pageOfResults = response.results filter {
+          _.tags map (_.id) contains "tone/advertisement-features"
+        } map (_.id)
+        val resultsSoFar = acc ++ pageOfResults
         response.pages match {
           case 0 => Future.successful(Nil)
           case i if i == pageIndex => Future.successful(resultsSoFar)
