@@ -4,6 +4,9 @@ machine:
 general:
   artifacts:
     - "~/commercial-expiry-service/target/riffraff/artifacts.zip"
+dependencies:
+  override:
+    - pwd
 test:
   override:
     - sbt test
