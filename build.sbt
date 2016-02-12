@@ -23,6 +23,12 @@ libraryDependencies ++= Seq(
 packageName in Universal := normalizedName.value
 
 riffRaffPackageType := (packageZipTarball in config("universal")).value
+riffRaffPackageName := s"editorial-tools:${name.value}"
+riffRaffManifestProjectName := riffRaffPackageName.value
+riffRaffBuildIdentifier :=  Option(System.getenv("CIRCLE_BUILD_NUM")).getOrElse("dev")
+riffRaffUploadArtifactBucket := Option("riffraff-artifact")
+riffRaffUploadManifestBucket := Option("riffraff-builds")
+riffRaffManifestBranch := Option(System.getenv("CIRCLE_BRANCH")).getOrElse("dev")
 
 doc in Compile <<= target.map(_ / "none")
 
