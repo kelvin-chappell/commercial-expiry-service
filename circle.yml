@@ -6,7 +6,7 @@ general:
     - "~/commercial-expiry-service/target/riffraff/artifacts.zip"
 dependencies:
   override:
-    - pwd
+    - sbt dependencies
 test:
   override:
     - sbt test
