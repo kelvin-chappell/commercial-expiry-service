@@ -7,7 +7,7 @@ version := "1.0-SNAPSHOT"
 lazy val root = (project in file(".")).enablePlugins(PlayScala, RiffRaffArtifact)
   .settings(Defaults.coreDefaultSettings: _*)
 
-scalaVersion := "2.11.7"
+scalaVersion := "2.11.6"
 
 libraryDependencies ++= Seq(
   jdbc,
@@ -19,6 +19,8 @@ libraryDependencies ++= Seq(
   "com.google.api-ads" % "dfp-axis" % "2.5.0",
   "net.logstash.logback" % "logstash-logback-encoder" % "4.5.1"
 )
+
+resolvers += "scalaz-bintray" at "http://dl.bintray.com/scalaz/releases"
 
 packageName in Universal := normalizedName.value
 
