@@ -8,18 +8,16 @@ lazy val root = (project in file(".")).enablePlugins(PlayScala, RiffRaffArtifact
   .settings(Defaults.coreDefaultSettings: _*)
   .settings(name in Universal := normalizedName.value)
   .settings(
-    name in Universal := normalizedName.value,
+    packageName in Universal := normalizedName.value,
+    topLevelDirectory in Universal := Some(normalizedName.value),
     riffRaffPackageType := (packageZipTarball in config("universal")).value,
-    riffRaffPackageName := s"editorial-tools:${name.value}",
-    riffRaffManifestProjectName := riffRaffPackageName.value,
+    riffRaffPackageName := name.value,
+    riffRaffManifestProjectName := s"editorial-tools:${name.value}",
     riffRaffBuildIdentifier :=  Option(System.getenv("CIRCLE_BUILD_NUM")).getOrElse("dev"),
     riffRaffUploadArtifactBucket := Option("riffraff-artifact"),
     riffRaffUploadManifestBucket := Option("riffraff-builds"),
     riffRaffManifestBranch := Option(System.getenv("CIRCLE_BRANCH")).getOrElse("dev"),
-    riffRaffPackageType := (packageZipTarball in config("universal")).value,
-    riffRaffArtifactResources ++= Seq(
-      riffRaffPackageType.value -> s"packages/${name.value}/${name.value}.tgz"
-    )
+    riffRaffPackageType := (packageZipTarball in config("universal")).value
   )
 
 scalaVersion := "2.11.6"
