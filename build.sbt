@@ -6,6 +6,7 @@ version := "1.0-SNAPSHOT"
 
 lazy val root = (project in file(".")).enablePlugins(PlayScala, RiffRaffArtifact)
   .settings(Defaults.coreDefaultSettings: _*)
+  .settings(name in Universal := normalizedName.value)
 
 scalaVersion := "2.11.6"
 
