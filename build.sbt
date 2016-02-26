@@ -7,6 +7,20 @@ version := "1.0-SNAPSHOT"
 lazy val root = (project in file(".")).enablePlugins(PlayScala, RiffRaffArtifact)
   .settings(Defaults.coreDefaultSettings: _*)
   .settings(name in Universal := normalizedName.value)
+  .settings(
+    name in Universal := normalizedName.value,
+    riffRaffPackageType := (packageZipTarball in config("universal")).value,
+    riffRaffPackageName := s"editorial-tools:${name.value}",
+    riffRaffManifestProjectName := riffRaffPackageName.value,
+    riffRaffBuildIdentifier :=  Option(System.getenv("CIRCLE_BUILD_NUM")).getOrElse("dev"),
+    riffRaffUploadArtifactBucket := Option("riffraff-artifact"),
+    riffRaffUploadManifestBucket := Option("riffraff-builds"),
+    riffRaffManifestBranch := Option(System.getenv("CIRCLE_BRANCH")).getOrElse("dev"),
+    riffRaffPackageType := (packageZipTarball in config("universal")).value,
+    riffRaffArtifactResources ++= Seq(
+      riffRaffPackageType.value -> s"packages/${name.value}/${name.value}.tgz"
+    )
+  )
 
 scalaVersion := "2.11.6"
 
@@ -22,16 +36,6 @@ libraryDependencies ++= Seq(
 )
 
 resolvers += "scalaz-bintray" at "http://dl.bintray.com/scalaz/releases"
-
-packageName in Universal := normalizedName.value
-
-riffRaffPackageType := (packageZipTarball in config("universal")).value
-riffRaffPackageName := s"editorial-tools:${name.value}"
-riffRaffManifestProjectName := riffRaffPackageName.value
-riffRaffBuildIdentifier :=  Option(System.getenv("CIRCLE_BUILD_NUM")).getOrElse("dev")
-riffRaffUploadArtifactBucket := Option("riffraff-artifact")
-riffRaffUploadManifestBucket := Option("riffraff-builds")
-riffRaffManifestBranch := Option(System.getenv("CIRCLE_BRANCH")).getOrElse("dev")
 
 doc in Compile <<= target.map(_ / "none")
 
