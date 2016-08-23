@@ -37,6 +37,11 @@
       "Type": "String",
       "Default": "77.91.248.0/21"
     },
+    "GithubTeamName": {
+      "Description": "Github team name, used for giving ssh access to members of the team.",
+      "Type": "String",
+      "Default": "Editorial-Tools-SSHAccess"
+    },
     "VulnerabilityScanningSecurityGroup": {
       "Description": "Security group that grants access to the account's Vulnerability Scanner",
       "Type": "AWS::EC2::SecurityGroup::Id"
@@ -124,6 +129,28 @@
           ]
         },
         "Roles": [ { "Ref": "CommercialExpiryServiceRole" } ]
+      }
+    },
+
+    "GetTeamKeysPolicy": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyName": "GetTeamKeysPolicy",
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:GetObject"],
+              "Resource": ["arn:aws:s3:::github-team-keys/*"]
+            },
+            {
+              "Effect":"Allow",
+              "Action": ["s3:ListBucket"],
+              "Resource":"arn:aws:s3:::github-team-keys"
+            }
+          ]
+        },
+        "Roles": [{"Ref": "CommercialExpiryServiceRole"}]
       }
     },
 
@@ -271,8 +298,13 @@
         "IamInstanceProfile": {"Ref": "CommercialExpiryServiceInstanceProfile"},
         "UserData":{
           "Fn::Base64":{
-            "Fn::Join":["", [
+            "Fn::Join": ["", [
               "#!/bin/bash -ev\n",
+              {
+                "Fn::Join": [ "",
+                  ["/opt/features/ssh-keys/initialise-keys-and-cron-job.sh -l -b github-team-keys -t ", {"Ref":"GithubTeamName"}, "|| true \n"]
+                ]
+              },
               "/opt/features/native-packager/install.sh -b composer-dist -t tgz -s\n"
             ]]
           }
