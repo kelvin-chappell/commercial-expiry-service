@@ -36,6 +36,10 @@
       "Description": "Ip range for the office",
       "Type": "String",
       "Default": "77.91.248.0/21"
+    },
+    "VulnerabilityScanningSecurityGroup": {
+      "Description": "Security group that grants access to the account's Vulnerability Scanner",
+      "Type": "AWS::EC2::SecurityGroup::Id"
     }
   },
 
@@ -260,7 +264,8 @@
         "ImageId":{ "Ref":"MachineImagesAMI" },
         "SecurityGroups": [
           { "Ref": "AppServerSecurityGroup" },
-          { "Ref": "SSHSecurityGroup" }
+          { "Ref": "SSHSecurityGroup" },
+          { "Ref": "VulnerabilityScanningSecurityGroup" }
         ],
         "InstanceType": "t2.micro",
         "IamInstanceProfile": {"Ref": "CommercialExpiryServiceInstanceProfile"},
